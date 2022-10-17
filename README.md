@@ -1,4 +1,5 @@
-# Daily Notes Manager Plugin for Obsidian
+# Daily Notes Manager
+## A Plugin for Obsidian
 
 This plugin is made to handle some automatic Daily Note management for Obsidian.
 
@@ -10,3 +11,11 @@ Some features of this plugin include:
 - An 'Archiving' feature, which automatically moves older Daily Notes to a specified folder
 - The ability to rollover unfinished tasks from the previous Daily Note
 - The ability to copy specific blocks of content from the previous Daily Note (with the ability to specify 'from'/'to' headings)
+
+### Using this Plugin
+
+Download the latest release, and move the folder to the `.obsidian/plugins/` directory in your Obsidian Vault
+
+Enable this plugin in 'Settings > Options > Community Plugins' in your Vault
+
+Configure in 'Settings > Community Plugins > Daily Notes Manager'
