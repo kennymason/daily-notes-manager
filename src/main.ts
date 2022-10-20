@@ -5,7 +5,8 @@ import { isDailyNote, addContentToHeading, getHashLevel } from './utils';
 
 interface Settings {
 	mySetting: string;
-	noteFolder: string,
+	dotw: boolean,
+	dotwLst: Array<string>,
 	archive: boolean,
 	archiveMaxNotes: number,
 	archiveFolder: string,
@@ -19,7 +20,8 @@ interface Settings {
 
 const DEFAULT_SETTINGS: Settings = {
 	mySetting: 'default',
-	noteFolder: '',
+	dotw: false,
+	dotwLst: ['', '', '', '', '', '', ''],
 	archive: false,
 	archiveMaxNotes: 7,
 	archiveFolder: '',
@@ -31,6 +33,16 @@ const DEFAULT_SETTINGS: Settings = {
 		prev: ''
 	}
 }
+
+const DEFAULT_DOTW: Array<[string, string]> = [
+	["Sunday", "Sunday-Funday"],
+	["Monday", "Monday ¯\\_(ツ)_/¯"],
+	["Tuesday", "2's Day"],
+	["Wednesday", "Hump Day!"],
+	["Thursday", "Thirsty Thursday"],
+	["Friday", "TGIF!"],
+	["Saturday", "Saturday :)"]
+];
 
 export default class NoteManager extends Plugin {
 	settings: Settings;
@@ -66,8 +78,6 @@ export default class NoteManager extends Plugin {
 		const ribbonIconEl = this.addRibbonIcon('dice', 'Daily Notes Manager', async (evt: MouseEvent) => {
 			await this.onRunDNM(this);
 		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class'); //TODO
 
 		// add a settings tab
 		this.addSettingTab(new SettingTab(this.app, this));
@@ -139,6 +149,11 @@ export default class NoteManager extends Plugin {
 		this.settings.modified.curr = file.basename;
 		await this.saveSettings();
 
+		// run 'Day of the Week'
+		if (this.settings.dotw) {
+			this.runDayOfTheWeek(file);
+		}
+
 		// get all notes
 		const allNotes = getAllDailyNotes();
 		const allKeys = Object.keys(allNotes);
@@ -172,6 +187,19 @@ export default class NoteManager extends Plugin {
 		if (this.settings.copyContentHeadings.length > 0 && lastNote) {
 			await this.runContentCopy(lastNote, file, this.settings.copyContentHeadings);
 		}
+	}
+
+	async runDayOfTheWeek (todaysNote: TFile): Promise<void> {
+		// Title the note with the day of the week
+		const day = new Date(todaysNote.basename.replace('-', '/')).getDay();
+		if (day < 0 || day > 6) return;
+
+		const titleStr = "# " + (this.settings.dotwLst[day] ?? DEFAULT_DOTW[day][0]) + "\n";
+
+		let body = await this.app.vault.read(todaysNote);
+		body = titleStr + body;
+
+		await this.app.vault.modify(todaysNote, body);
 	}
 
 	async runArchive (allNotes: Record<string, TFile>, keys: string[]): Promise<void> {
@@ -269,6 +297,41 @@ class SettingTab extends PluginSettingTab {
 		await this.taskSettings(containerEl);
 		// Carry over content
 		await this.contentCopySettings(containerEl);
+
+		/* Day of the Week */
+		await this.daySettings(containerEl);
+	}
+
+	// Creates settings UI for day of the week title
+	async daySettings (containerEl: HTMLElement): Promise<void> {
+		new Setting(containerEl)
+			.setName('Day of the Week')
+			.setDesc("Choose custom title for each day of the week?")
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings.dotw)
+					.onChange(async (dotw) => {
+						this.plugin.settings.dotw = dotw;
+
+						await this.plugin.saveSettings();
+						this.display();
+					});
+		});
+
+		if (this.plugin.settings.dotw) {
+			for (let i = 0; i < 7; i++) {
+				new Setting(containerEl)
+				.setDesc(DEFAULT_DOTW[i][0])
+				.addText((text) => {
+					text.setPlaceholder(DEFAULT_DOTW[i][1])
+						.setValue(this.plugin.settings.dotwLst[i])
+						.onChange(async (input) => {
+							this.plugin.settings.dotwLst[i] = input;
+							await this.plugin.saveSettings();
+						});
+				});
+			}
+		}
 	}
 
 	// Creates settings UI for archiving notes
@@ -353,6 +416,7 @@ class SettingTab extends PluginSettingTab {
 			const targetHeading = headings[1];
 
 			new Setting(containerEl)
+				// .setDesc("From ")
 				.addSearch(value => {
 					new HeadingSelect(this.app, value.inputEl);
 					value.setPlaceholder("Source heading")
@@ -363,6 +427,7 @@ class SettingTab extends PluginSettingTab {
 					})
 				})
 
+				// .setDesc(" -> To ")
 				.addSearch(value => {
 					new HeadingSelect(this.app, value.inputEl);
 					value.setPlaceholder("Target heading")
