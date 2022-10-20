@@ -1,8 +1,8 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from 'obsidian';
-import { getAllDailyNotes } from 'obsidian-daily-notes-interface';
+import { App, Editor, FileManager, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile, TFolder } from 'obsidian';
+import { createDailyNote, getAllDailyNotes, getDailyNote, getDailyNoteSettings } from 'obsidian-daily-notes-interface';
 import { fileURLToPath } from 'url';
 import { FolderSelect, HeadingSelect } from './Settings/Selecters';
-import { getDailyNoteFolder, isDailyNote } from './utils';
+import { getDailyNoteFolder, getDailyNoteByPartialKey, isDailyNote, addContentToHeading, getHashLevel } from './utils';
 
 // Remember to rename these classes and interfaces!
 
@@ -13,7 +13,11 @@ interface Settings {
 	archiveMaxNotes: number,
 	archiveFolder: string,
 	taskRollover: boolean,
-	copyContentHeadings: Array<[string, string]>
+	taskHeading: string,
+	copyContentHeadings: Array<[string, string]>,
+	modified: {
+		[key: string]: string
+	}
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -23,115 +27,16 @@ const DEFAULT_SETTINGS: Settings = {
 	archiveMaxNotes: 7,
 	archiveFolder: '',
 	taskRollover: true,
-	copyContentHeadings: [["", ""]]
+	taskHeading: '',
+	copyContentHeadings: [["", ""]],
+	modified: {
+		curr: '',
+		prev: ''
+	}
 }
 
 export default class NoteManager extends Plugin {
 	settings: Settings;
-
-	async onload() {
-		await this.loadSettings();
-
-		this.registerEvent(this.app.vault.on('create', async (file) => {
-      if (!(file instanceof TFile && isDailyNote(file))) {
-				return;
-			}
-
-			// TODO
-
-			// Get Last Daily Note
-
-			if (this.settings.archive) {
-				const allNotes = getAllDailyNotes();
-
-				if (Object.keys(allNotes).length > 7) {
-					// archive oldest notes
-				}
-
-
-			} 
-			
-			/*
-			*/
-    }))
-
-		//TODO
-		/*
-		function getDailyNote (): TFile {
-			// let file = findDailyNote(); // looks for existing daily note
-
-			// if (!file || !isDailyNote(file, true)) file = createDailyNote();
-
-			return file;
-		}
-		*/
-
-		// creates the icon in the left ribbon
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Daily Notes Manager', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-
-			// TODO
-			//const todaysNote = getDailyNote();
-			// what do i do if it exists? what if i have to create it?
-
-			new Notice('Created Daily Note!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-	}
-
-	onunload() {
-
-	}
 
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -139,6 +44,220 @@ export default class NoteManager extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	async onload() {
+		await this.loadSettings();
+
+		this.registerEvent(this.app.vault.on('create', async (file) => {
+			if (!(file instanceof TFile)) {
+				return;
+			}
+			await this.runNoteManager(file);
+		}));
+
+		this.registerEvent(this.app.vault.on('delete', async (file) => {
+			if (!(file instanceof TFile)) {
+				return;
+			}
+
+			// remove note from modified log
+			if (this.settings.modified.prev == file.basename){
+				this.settings.modified.prev = '';
+
+				await this.saveSettings();
+			}
+			if (this.settings.modified.curr == file.basename){
+				this.settings.modified.curr = this.settings.modified.prev;
+
+				await this.saveSettings();
+			}
+		}));
+
+    this.addCommand({
+      id: "run-daily-notes-manager",
+      name: "Run Daily Notes Manager",
+      callback: async () => {
+				const file = await createDailyNote(window.moment());
+				await this.runNoteManager(file);
+			}
+    })
+
+		// creates the icon in the left ribbon
+		const ribbonIconEl = this.addRibbonIcon('dice', 'Daily Notes Manager', async (evt: MouseEvent) => {
+			// Called when the user clicks the icon.
+			let todaysNote = getDailyNote(window.moment(), getAllDailyNotes());
+
+			if (!isDailyNote(todaysNote, true)) {
+				todaysNote = await createDailyNote(window.moment());
+				await this.runNoteManager(todaysNote);
+			}
+			// TODO: use the daily note settings format in other places
+			else {
+				if (todaysNote.basename != this.settings.modified.curr && todaysNote.basename != this.settings.modified.prev) {
+					await this.runNoteManager(todaysNote);
+				}
+			}
+
+			const leaf = this.app.workspace.getLeaf();
+			leaf.openFile(todaysNote);
+
+			// new Notice('Created Daily Note!');
+		});
+		// Perform additional things with the ribbon
+		ribbonIconEl.addClass('my-plugin-ribbon-class');
+
+		// add a settings tab
+		this.addSettingTab(new SettingTab(this.app, this));
+	}
+
+	onunload() {
+
+	}
+
+	async runNoteManager (file: TFile | null): Promise<void> {
+		if (!file || !(file instanceof TFile) || !isDailyNote(file)) {
+			return;
+		}
+			
+		// if (this.settings.modified.curr == file.basename){
+		// 	if (this.settings.modified.prev == file.basename){
+		// 		this.settings.modified.curr = '';
+		// 		this.settings.modified.prev = '';
+		// 	}
+		// 	else {
+		// 		this.settings.modified.curr = this.settings.modified.prev;
+		// 	}
+
+		// 	await this.saveSettings();
+		// }
+
+
+		// return if this note was already modified
+		if (this.settings.modified.prev == file.basename || this.settings.modified.curr == file.basename){
+			return;
+		}
+		
+		// mark note as modified
+		this.settings.modified.prev = this.settings.modified.curr;
+		this.settings.modified.curr = file.basename;
+		await this.saveSettings();
+		// // return if this note was already modified
+		// const x = new Date(this.settings.modified)
+		// const y = new Date(file.basename);
+		// if ((x ? x.getTime() : 0) - (y ? y.getTime() : 0) > 0) {
+		// 	return;
+		// }
+
+		// get all notes
+		const allNotes = getAllDailyNotes();
+		const allKeys = Object.keys(allNotes);
+
+		// sort notes by date
+		let sortedKeys = [...allKeys];
+		sortedKeys.sort((a: string, b: string): number =>  {
+			// keys (DateUID[]) are prefixed with a granularity (day-, month-, year-)
+			const x = new Date(a.replace('day-', '').replace('month-', '').replace('year-', ''));
+			const y = new Date(b.replace('day-', '').replace('month-', '').replace('year-', ''));
+			// Do I need to handle null/undefined Dates? Maybe not, but whatever.
+			return (y ? y.getTime() : 0) - (x ? x.getTime() : 0);
+		});
+
+		// get previous daily note
+		const lastNote = allNotes[sortedKeys[1]];
+
+		// archive old notes if enabled
+		if (this.settings.archive) {
+			await this.runArchive(allNotes, sortedKeys);
+		}
+
+		// rollover unfinished tasks if enabled
+		if (this.settings.taskRollover && this.settings.taskHeading) {
+			if (lastNote){
+				await this.runTasks(lastNote, file);
+			}
+		}
+
+		// copy over content if enabled
+		if (this.settings.copyContentHeadings.length > 0 && lastNote) {
+			this.settings.copyContentHeadings.forEach(async (pair) => {
+				await this.runContentCopy(lastNote, file, pair[0], pair[1]);
+			});
+		}
+	}
+
+	async runArchive (allNotes: Record<string, TFile>, keys: string[]): Promise<void> {
+		// archive oldest notes
+		if (keys.length > this.settings.archiveMaxNotes) {
+			for (; keys.length > this.settings.archiveMaxNotes;) {
+				const key = keys.pop();
+				if (!key) break;
+
+				const note = allNotes[key];
+				if (!note) {
+					return;
+				}
+
+				await this.app.fileManager.renameFile(note, this.settings.archiveFolder + '/' + note.basename + '.md');
+			}
+		}
+	}
+
+	async runTasks (prevNote: TFile, currNote: TFile): Promise<void> {
+		// rollover tasks from previous note
+    const contents = await this.app.vault.read(prevNote);
+    const incompleteTasks = Array.from(contents.replace(/\t*- \[ \][ ]*\n/g, '').matchAll(/\t*- \[ \].*/g)).map(([task]) => {
+			if (!task.match(/\t*- \[ \][ ]*\n/)) return task;
+		});
+
+		if (incompleteTasks.length == 0) {
+			return;
+		}
+
+		const todaysNote = await this.app.vault.read(currNote);
+
+		// const blankCheckboxRegex = new RegExp("\t*- \[ \][ ]*\n", 'g');
+		let updatedNote = todaysNote.replace(/\t*- \[ \][ ]*\n/g, '');
+
+		if (updatedNote != todaysNote) console.log("not");
+		if (updatedNote == todaysNote) console.log("is");
+
+		updatedNote = addContentToHeading(updatedNote, this.settings.taskHeading, incompleteTasks.join('\n'));
+
+		if (!updatedNote) {
+			return;
+		}
+
+		await this.app.vault.modify(currNote, updatedNote);
+	}
+
+	async runContentCopy (lastNote: TFile, currNote: TFile, srcHeading: string, destHeading: string): Promise<void> {
+		// copy content from the previous note's source heading to the current note's destination heading
+		const contents = await this.app.vault.read(lastNote);
+
+    // Array.from(contents.matchAll(new RegExp(srcHeading, 'g'))).map(([heading]) => heading);
+
+		const hashLevel = getHashLevel(srcHeading);
+
+		// const hashRegex = "#{" + hashLevel + "} .*"
+    // const headings = Array.from(contents.matchAll(new RegExp(hashRegex, 'g'))).map(([heading]) => heading);
+		console.log(new RegExp("(?<=" + srcHeading + ")[\n.]*(?=\n[#]{" + hashLevel + "} .*)"));
+		const content = contents.match(new RegExp("(?<=" + srcHeading + ")[\n.]*(?=\n[#]{" + hashLevel + "} .*)"));
+		if (!content) {
+			console.log("nocnt");
+			return;
+		}
+
+		const todaysNote = await this.app.vault.read(currNote);
+
+		const updatedNote = addContentToHeading(todaysNote, destHeading, content.join('\n'));
+		if (!updatedNote) {
+			console.log("noupdates");
+			return;
+		}
+		console.log("woop");
+
+		await this.app.vault.modify(currNote, updatedNote);
 	}
 }
 
@@ -211,9 +330,9 @@ class SettingTab extends PluginSettingTab {
 			.setDesc("Max number of previous Daily Notes to remain unarchived:")
 			.addText((text) => {
 					text.setPlaceholder("Example: 7")
-							.setValue(this.plugin.settings.archiveFolder)
+							.setValue(this.plugin.settings.archiveMaxNotes.toString())
 							.onChange(async (numNotes) => {
-									this.plugin.settings.archiveMaxNotes = numNotes;
+									this.plugin.settings.archiveMaxNotes = parseInt(numNotes);
 									await this.plugin.saveSettings();
 							});
 			});
@@ -246,8 +365,25 @@ class SettingTab extends PluginSettingTab {
 				.onChange(async (taskRollover) => {
 					this.plugin.settings.taskRollover = taskRollover;
 					await this.plugin.saveSettings();
+					this.display();
 				})
 		});
+
+		if (this.plugin.settings.taskRollover) {
+			new Setting(containerEl)
+			.setDesc("Select a destination heading for your unfinished tasks.")
+			.addSearch((value) => {
+					new HeadingSelect(this.app, value.inputEl);
+					value.setPlaceholder("Example: ## Tasks")
+							.setValue(this.plugin.settings.taskHeading)
+							.onChange(async (selectedHeading) => {
+									this.plugin.settings.taskHeading = selectedHeading;
+									await this.plugin.saveSettings();
+							});
+					// @ts-ignore
+					value.containerEl.addClass("templater_search"); //TODO
+			});
+		}
 
 		// Carry over content
 		// const desc = document.createDocumentFragment();
