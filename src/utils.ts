@@ -28,11 +28,53 @@ export function getHashLevel (headingStr: string): number {
 
 // adds given content to a specified heading in a given file. returns empty string if heading could not be found
 export function addContentToHeading(note: string, heading: string, content: string): string {
-  const updatedNote = note.replace(heading, heading + '\n' + content);
+  // number of blank new lines after heading (not including the \n on the heading line)
+  const newlinesMatch = ((note || '').match(new RegExp("(?<=" + heading + ")\n*")) || ['']);
+  let numNewLines = newlinesMatch[0].length - 1;
+  console.log(heading + numNewLines);
+
+  // inserts content under heading, removing up to 1 blank newline
+  // So if the template is like so: "## Tasks\n\n## Fun Facts", the updatedNote would look like: "## Tasks\n<content>\n## Fun Facts"
+  // console.log(heading);//(?=\n#+ .*)
+  // let replaceStr = heading + '\n' + content;
+  // if (note.match(new RegExp(heading + "[\n]{0,1}#+"))) {
+  //   replaceStr += '\n';
+  // }
+  // const updatedNote = note.replace(new RegExp(heading + "[\n]{0,2}"), replaceStr);
+
+
+  // console.log(note.match(new RegExp(heading + "(?=#+|)[\n]{2,}")));
+  // let replaceStr = heading + '\n' + content;
+  // if (note.match(new RegExp(heading + "(?=#+|)[\n]{2,}"))) {
+  //   for (let i = 0; i < numNewLines; i++){
+  //     replaceStr += '\n';
+  //     console.log(i);
+  //   }
+  // }
+  // else {
+  //   replaceStr += '\n\n';
+  // }
+  // const updatedNote = note.replace(new RegExp(heading + "\n+"), replaceStr);
+
+
+  // console.log(note.match(new RegExp(heading + "(?=#+|)[\n]{2,}")));
+
+
+  let replaceStr = heading + '\n' + content;
+  if (numNewLines <= 2) {
+    replaceStr += '\n\n';
+  }
+  else {
+    for (let i = 0; i < numNewLines; i++){
+      replaceStr += '\n';
+    }
+  }
+  const updatedNote = note.replace(new RegExp(heading + "\n*"), replaceStr);
 
   if (updatedNote == note) {
     return '';
   }
+
   return updatedNote;
 }
 

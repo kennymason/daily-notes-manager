@@ -1,8 +1,7 @@
-import { App, Editor, FileManager, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile, TFolder } from 'obsidian';
-import { createDailyNote, getAllDailyNotes, getDailyNote, getDailyNoteSettings } from 'obsidian-daily-notes-interface';
-import { fileURLToPath } from 'url';
+import { App, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile } from 'obsidian';
+import { createDailyNote, getAllDailyNotes, getDailyNote } from 'obsidian-daily-notes-interface';
 import { FolderSelect, HeadingSelect } from './Settings/Selecters';
-import { getDailyNoteFolder, getDailyNoteByPartialKey, isDailyNote, addContentToHeading, getHashLevel } from './utils';
+import { isDailyNote, addContentToHeading, getHashLevel } from './utils';
 
 // Remember to rename these classes and interfaces!
 
@@ -50,62 +49,27 @@ export default class NoteManager extends Plugin {
 		await this.loadSettings();
 
 		this.registerEvent(this.app.vault.on('create', async (file) => {
-			if (!(file instanceof TFile)) {
-				return;
-			}
-			await this.runNoteManager(file);
+			this.onFileCreate(this, file);
 		}));
 
 		this.registerEvent(this.app.vault.on('delete', async (file) => {
-			if (!(file instanceof TFile)) {
-				return;
-			}
-
-			// remove note from modified log
-			if (this.settings.modified.prev == file.basename){
-				this.settings.modified.prev = '';
-
-				await this.saveSettings();
-			}
-			if (this.settings.modified.curr == file.basename){
-				this.settings.modified.curr = this.settings.modified.prev;
-
-				await this.saveSettings();
-			}
+			await this.onFileDelete(this, file);
 		}));
 
     this.addCommand({
       id: "run-daily-notes-manager",
       name: "Run Daily Notes Manager",
       callback: async () => {
-				const file = await createDailyNote(window.moment());
-				await this.runNoteManager(file);
+				await this.onRunDNM(this);
 			}
     })
 
 		// creates the icon in the left ribbon
 		const ribbonIconEl = this.addRibbonIcon('dice', 'Daily Notes Manager', async (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			let todaysNote = getDailyNote(window.moment(), getAllDailyNotes());
-
-			if (!isDailyNote(todaysNote, true)) {
-				todaysNote = await createDailyNote(window.moment());
-				await this.runNoteManager(todaysNote);
-			}
-			// TODO: use the daily note settings format in other places
-			else {
-				if (todaysNote.basename != this.settings.modified.curr && todaysNote.basename != this.settings.modified.prev) {
-					await this.runNoteManager(todaysNote);
-				}
-			}
-
-			const leaf = this.app.workspace.getLeaf();
-			leaf.openFile(todaysNote);
-
-			// new Notice('Created Daily Note!');
+			await this.onRunDNM(this);
 		});
 		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+		ribbonIconEl.addClass('my-plugin-ribbon-class'); //TODO
 
 		// add a settings tab
 		this.addSettingTab(new SettingTab(this.app, this));
@@ -115,24 +79,60 @@ export default class NoteManager extends Plugin {
 
 	}
 
+	async onFileCreate (plugin: NoteManager, file: TAbstractFile): Promise<void> {
+		if (!(file instanceof TFile)) {
+			return;
+		}
+
+		await plugin.runNoteManager(file);
+	}
+
+	async onFileDelete (plugin: NoteManager, file: TAbstractFile): Promise<void> {
+		if (!(file instanceof TFile)) {
+			return;
+		}
+		
+		// await this.loadSettings();
+
+		// remove note from modified log
+		if (plugin.settings.modified.prev == file.basename){
+			plugin.settings.modified.prev = '';
+
+			await plugin.saveSettings();
+		}
+		if (plugin.settings.modified.curr == file.basename){
+			plugin.settings.modified.curr = plugin.settings.modified.prev;
+
+			await plugin.saveSettings();
+		}
+	}
+
+	async onRunDNM (plugin: NoteManager): Promise<void> {
+		// Called when the user runs the 'Run Daily Notes Manager' command or clicks the ribbon icon.
+		await this.loadSettings();
+
+		let todaysNote = getDailyNote(window.moment(), getAllDailyNotes());
+
+		if (!isDailyNote(todaysNote, true)) {
+			todaysNote = await createDailyNote(window.moment());
+			await this.runNoteManager(todaysNote);
+		}
+		// TODO: use the daily note settings format in other places
+		else {
+			if (todaysNote.basename != this.settings.modified.curr && todaysNote.basename != this.settings.modified.prev) {
+				await this.runNoteManager(todaysNote);
+			}
+		}
+
+		const leaf = this.app.workspace.getLeaf();
+		leaf.openFile(todaysNote);
+	}
+
 	async runNoteManager (file: TFile | null): Promise<void> {
 		if (!file || !(file instanceof TFile) || !isDailyNote(file)) {
 			return;
 		}
 			
-		// if (this.settings.modified.curr == file.basename){
-		// 	if (this.settings.modified.prev == file.basename){
-		// 		this.settings.modified.curr = '';
-		// 		this.settings.modified.prev = '';
-		// 	}
-		// 	else {
-		// 		this.settings.modified.curr = this.settings.modified.prev;
-		// 	}
-
-		// 	await this.saveSettings();
-		// }
-
-
 		// return if this note was already modified
 		if (this.settings.modified.prev == file.basename || this.settings.modified.curr == file.basename){
 			return;
@@ -142,12 +142,6 @@ export default class NoteManager extends Plugin {
 		this.settings.modified.prev = this.settings.modified.curr;
 		this.settings.modified.curr = file.basename;
 		await this.saveSettings();
-		// // return if this note was already modified
-		// const x = new Date(this.settings.modified)
-		// const y = new Date(file.basename);
-		// if ((x ? x.getTime() : 0) - (y ? y.getTime() : 0) > 0) {
-		// 	return;
-		// }
 
 		// get all notes
 		const allNotes = getAllDailyNotes();
@@ -180,9 +174,13 @@ export default class NoteManager extends Plugin {
 
 		// copy over content if enabled
 		if (this.settings.copyContentHeadings.length > 0 && lastNote) {
-			this.settings.copyContentHeadings.forEach(async (pair) => {
-				await this.runContentCopy(lastNote, file, pair[0], pair[1]);
-			});
+			// this.settings.copyContentHeadings.forEach(async (pair) => {
+			// 	await this.runContentCopy(lastNote, file, pair[0], pair[1]);
+			// });
+
+			// .forEach(async (pair) => {
+				await this.runContentCopy(lastNote, file, this.settings.copyContentHeadings);
+			// });
 		}
 	}
 
@@ -206,9 +204,7 @@ export default class NoteManager extends Plugin {
 	async runTasks (prevNote: TFile, currNote: TFile): Promise<void> {
 		// rollover tasks from previous note
     const contents = await this.app.vault.read(prevNote);
-    const incompleteTasks = Array.from(contents.replace(/\t*- \[ \][ ]*\n/g, '').matchAll(/\t*- \[ \].*/g)).map(([task]) => {
-			if (!task.match(/\t*- \[ \][ ]*\n/)) return task;
-		});
+    const incompleteTasks = Array.from(contents.replace(/\t*- \[ \][ ]*\n/g, '').matchAll(/\t*- \[ \].*/g)).map(([task]) => task);
 
 		if (incompleteTasks.length == 0) {
 			return;
@@ -216,14 +212,11 @@ export default class NoteManager extends Plugin {
 
 		const todaysNote = await this.app.vault.read(currNote);
 
-		// const blankCheckboxRegex = new RegExp("\t*- \[ \][ ]*\n", 'g');
-		let updatedNote = todaysNote.replace(/\t*- \[ \][ ]*\n/g, '');
+		// ignore empty checkboxes
+		let updatedNote = todaysNote.replace(/\t*- \[ \][ ]*\n/g, '\n');
 
-		if (updatedNote != todaysNote) console.log("not");
-		if (updatedNote == todaysNote) console.log("is");
-
+		// addContentToHeading returns an empty string if there are no changes
 		updatedNote = addContentToHeading(updatedNote, this.settings.taskHeading, incompleteTasks.join('\n'));
-
 		if (!updatedNote) {
 			return;
 		}
@@ -231,49 +224,35 @@ export default class NoteManager extends Plugin {
 		await this.app.vault.modify(currNote, updatedNote);
 	}
 
-	async runContentCopy (lastNote: TFile, currNote: TFile, srcHeading: string, destHeading: string): Promise<void> {
+	// async runContentCopy (lastNote: TFile, currNote: TFile, srcHeading: string, destHeading: string): Promise<void> {
+	async runContentCopy (lastNote: TFile, currNote: TFile, headings: [string, string][]): Promise<void> {
 		// copy content from the previous note's source heading to the current note's destination heading
-		const contents = await this.app.vault.read(lastNote);
+		const prevContents = await this.app.vault.read(lastNote);
+		let todaysNote = await this.app.vault.read(currNote);
 
-    // Array.from(contents.matchAll(new RegExp(srcHeading, 'g'))).map(([heading]) => heading);
+		headings.forEach(async (pair) => {
+			const srcHeading = pair[0];
+			const destHeading = pair[1];
 
-		const hashLevel = getHashLevel(srcHeading);
+			// find how many hashtags deep the heading is
+			const hashLevel = getHashLevel(srcHeading);
 
-		// const hashRegex = "#{" + hashLevel + "} .*"
-    // const headings = Array.from(contents.matchAll(new RegExp(hashRegex, 'g'))).map(([heading]) => heading);
-		console.log(new RegExp("(?<=" + srcHeading + ")[\n.]*(?=\n[#]{" + hashLevel + "} .*)"));
-		const content = contents.match(new RegExp("(?<=" + srcHeading + ")[\n.]*(?=\n[#]{" + hashLevel + "} .*)"));
-		if (!content) {
-			console.log("nocnt");
-			return;
-		}
+			// get content from heading, removing trailing newlines
+			const content = prevContents.match(new RegExp("(?<=" + srcHeading + "\n)((?!(\n)+[#]{" + hashLevel + "} .*)(.|\n))*"));
+			if (!content) {
+				return;
+			}
 
-		const todaysNote = await this.app.vault.read(currNote);
+			// addContentToHeading returns an empty string if there are no changes
+			const updatedNote = addContentToHeading(todaysNote, destHeading, content[0]);
+			if (!updatedNote) {
+				return;
+			}
 
-		const updatedNote = addContentToHeading(todaysNote, destHeading, content.join('\n'));
-		if (!updatedNote) {
-			console.log("noupdates");
-			return;
-		}
-		console.log("woop");
+			todaysNote = updatedNote;
 
-		await this.app.vault.modify(currNote, updatedNote);
-	}
-}
-
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+			await this.app.vault.modify(currNote, todaysNote);
+		});
 	}
 }
 
@@ -285,32 +264,25 @@ class SettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
-	display(): void {
+	async display(): Promise<void> {
 		const {containerEl} = this;
 
 		containerEl.empty();
-
-		containerEl.createEl('h2', {text: 'Settings for my awesome plugin.'});
-
-		/* Daily Notes Folder */
-		const noteFolder = getDailyNoteFolder();
-		if (noteFolder) this.plugin.settings.noteFolder = noteFolder;
-		// new Setting(containerEl)
-		// .setName("Daily Notes folder location")
-		// .setDesc("Select the folder where you create new Daily Notes.")
-		// .addSearch((value) => {
-		// 		new FolderSelect(this.app, value.inputEl);
-		// 		value.setPlaceholder("Example: dir1/subdir1")
-		// 				.setValue(this.plugin.settings.noteFolder)
-		// 				.onChange(async (selectedFolder) => {
-		// 						this.plugin.settings.noteFolder = selectedFolder;
-		// 						await this.plugin.saveSettings();
-		// 				});
-		// 		// @ts-ignore
-		// 		value.containerEl.addClass("templater_search"); //TODO
-		// });
+		containerEl.createEl('h2', {text: 'And how would you like that done?'});
 		
 		/* Archive */
+		await this.archiveSettings(containerEl);
+
+		/* Rollover content from the previous daily note */
+		this.containerEl.createEl("h2", { text: "Carryover From Previous Note" });
+		// rollover unfinished tasks
+		await this.taskSettings(containerEl);
+		// Carry over content
+		await this.contentCopySettings(containerEl);
+	}
+
+	// Creates settings UI for archiving notes
+	async archiveSettings (containerEl: HTMLElement): Promise<void> {
 		new Setting(containerEl)
 			.setName('Archive')
 			.setDesc("Move old Daily Notes into an 'Archive' folder?")
@@ -351,11 +323,10 @@ class SettingTab extends PluginSettingTab {
 					value.containerEl.addClass("templater_search");
 			});
 		}
+	}
 
-		/* Rollover content from the previous daily note */
-		this.containerEl.createEl("h2", { text: "Carryover From Previous Note" });
-
-		// rollover unfinished tasks
+	// Creates settings UI for task rollover
+	async taskSettings (containerEl: HTMLElement): Promise<void> {
 		new Setting(containerEl)
 			.setName('Task Rollover')
 			.setDesc('Rollover unfinished tasks from the previous Daily Note?')
@@ -384,14 +355,12 @@ class SettingTab extends PluginSettingTab {
 					value.containerEl.addClass("templater_search"); //TODO
 			});
 		}
+	}
 
-		// Carry over content
-		// const desc = document.createDocumentFragment();
-		// desc.append(
-		// 		"Copies over content from a specified heading in the previous Daily Note to a specified heading in today's Daily Note."
-		// );
+	// Creates settings UI for content carryover
+	async contentCopySettings (containerEl: HTMLElement): Promise<void> {
 		const desc = "Copies over content from a specified heading in the previous Daily Note to a specified heading in today's Daily Note.";
-		new Setting(this.containerEl).setName('Copy Content to New Note').setDesc(desc);
+		new Setting(containerEl).setName('Copy Content to New Note').setDesc(desc);
 
 		this.plugin.settings.copyContentHeadings.forEach((headings, index) => {
 			const sourceHeading = headings[0];
