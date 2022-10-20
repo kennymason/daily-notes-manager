@@ -31,35 +31,9 @@ export function addContentToHeading(note: string, heading: string, content: stri
   // number of blank new lines after heading (not including the \n on the heading line)
   const newlinesMatch = ((note || '').match(new RegExp("(?<=" + heading + ")\n*")) || ['']);
   let numNewLines = newlinesMatch[0].length - 1;
-  console.log(heading + numNewLines);
-
-  // inserts content under heading, removing up to 1 blank newline
-  // So if the template is like so: "## Tasks\n\n## Fun Facts", the updatedNote would look like: "## Tasks\n<content>\n## Fun Facts"
-  // console.log(heading);//(?=\n#+ .*)
-  // let replaceStr = heading + '\n' + content;
-  // if (note.match(new RegExp(heading + "[\n]{0,1}#+"))) {
-  //   replaceStr += '\n';
-  // }
-  // const updatedNote = note.replace(new RegExp(heading + "[\n]{0,2}"), replaceStr);
-
-
-  // console.log(note.match(new RegExp(heading + "(?=#+|)[\n]{2,}")));
-  // let replaceStr = heading + '\n' + content;
-  // if (note.match(new RegExp(heading + "(?=#+|)[\n]{2,}"))) {
-  //   for (let i = 0; i < numNewLines; i++){
-  //     replaceStr += '\n';
-  //     console.log(i);
-  //   }
-  // }
-  // else {
-  //   replaceStr += '\n\n';
-  // }
-  // const updatedNote = note.replace(new RegExp(heading + "\n+"), replaceStr);
-
-
-  // console.log(note.match(new RegExp(heading + "(?=#+|)[\n]{2,}")));
-
-
+  
+  // add newlines after content. if the template has <= 2 newlines under the heading, add 2 newlines
+  // otherwise, keep the number of newlines the template has (-1, because the first blank line becomes the content line)
   let replaceStr = heading + '\n' + content;
   if (numNewLines <= 2) {
     replaceStr += '\n\n';
@@ -69,6 +43,8 @@ export function addContentToHeading(note: string, heading: string, content: stri
       replaceStr += '\n';
     }
   }
+
+  // Add content to note
   const updatedNote = note.replace(new RegExp(heading + "\n*"), replaceStr);
 
   if (updatedNote == note) {
@@ -120,29 +96,3 @@ export function isDailyNote (file: TFile | undefined = undefined, todaysOnly: bo
 
   return false;
 }
-
-// From Rollover Daily Todos
-// export function createRepresentationFromHeadings(headings: string[]) {
-//   let i = 0;
-//   const tags = [];
-//   (function recurse(depth) {
-//     let unclosedLi = false;
-//     while (i < headings.length) {
-//       const [hashes, data] = headings[i].split("# ");
-//       if (hashes.length < depth) {
-//         break;
-//       } else if (hashes.length === depth) {
-//         if (unclosedLi) tags.push('</li>');
-//         unclosedLi = true;
-//         tags.push('<li>', data);
-//         i++;
-//       } else {
-//         tags.push('<ul>');
-//         recurse(depth + 1);
-//         tags.push('</ul>');
-//       }
-//     }
-//     if (unclosedLi) tags.push('</li>');
-//   })(-1);
-//   return tags.join('\n');
-// }

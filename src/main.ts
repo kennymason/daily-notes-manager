@@ -3,8 +3,6 @@ import { createDailyNote, getAllDailyNotes, getDailyNote } from 'obsidian-daily-
 import { FolderSelect, HeadingSelect } from './Settings/Selecters';
 import { isDailyNote, addContentToHeading, getHashLevel } from './utils';
 
-// Remember to rename these classes and interfaces!
-
 interface Settings {
 	mySetting: string;
 	noteFolder: string,
@@ -91,8 +89,6 @@ export default class NoteManager extends Plugin {
 		if (!(file instanceof TFile)) {
 			return;
 		}
-		
-		// await this.loadSettings();
 
 		// remove note from modified log
 		if (plugin.settings.modified.prev == file.basename){
@@ -174,13 +170,7 @@ export default class NoteManager extends Plugin {
 
 		// copy over content if enabled
 		if (this.settings.copyContentHeadings.length > 0 && lastNote) {
-			// this.settings.copyContentHeadings.forEach(async (pair) => {
-			// 	await this.runContentCopy(lastNote, file, pair[0], pair[1]);
-			// });
-
-			// .forEach(async (pair) => {
-				await this.runContentCopy(lastNote, file, this.settings.copyContentHeadings);
-			// });
+			await this.runContentCopy(lastNote, file, this.settings.copyContentHeadings);
 		}
 	}
 
@@ -301,26 +291,24 @@ class SettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 			.setDesc("Max number of previous Daily Notes to remain unarchived:")
 			.addText((text) => {
-					text.setPlaceholder("Example: 7")
-							.setValue(this.plugin.settings.archiveMaxNotes.toString())
-							.onChange(async (numNotes) => {
-									this.plugin.settings.archiveMaxNotes = parseInt(numNotes);
-									await this.plugin.saveSettings();
-							});
+				text.setPlaceholder("Example: 7")
+					.setValue(this.plugin.settings.archiveMaxNotes.toString())
+					.onChange(async (numNotes) => {
+						this.plugin.settings.archiveMaxNotes = parseInt(numNotes);
+						await this.plugin.saveSettings();
+					});
 			});
 
 			new Setting(containerEl)
 			.setDesc("Select a folder for your archived Daily Notes.")
 			.addSearch((value) => {
-					new FolderSelect(this.app, value.inputEl);
-					value.setPlaceholder("Example: dir1/subdir1")
-							.setValue(this.plugin.settings.archiveFolder)
-							.onChange(async (selectedFolder) => {
-									this.plugin.settings.archiveFolder = selectedFolder;
-									await this.plugin.saveSettings();
-							});
-					// @ts-ignore
-					value.containerEl.addClass("templater_search");
+				new FolderSelect(this.app, value.inputEl);
+				value.setPlaceholder("Example: dir1/subdir1")
+					.setValue(this.plugin.settings.archiveFolder)
+					.onChange(async (selectedFolder) => {
+						this.plugin.settings.archiveFolder = selectedFolder;
+						await this.plugin.saveSettings();
+					});
 			});
 		}
 	}
@@ -344,15 +332,13 @@ class SettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 			.setDesc("Select a destination heading for your unfinished tasks.")
 			.addSearch((value) => {
-					new HeadingSelect(this.app, value.inputEl);
-					value.setPlaceholder("Example: ## Tasks")
-							.setValue(this.plugin.settings.taskHeading)
-							.onChange(async (selectedHeading) => {
-									this.plugin.settings.taskHeading = selectedHeading;
-									await this.plugin.saveSettings();
-							});
-					// @ts-ignore
-					value.containerEl.addClass("templater_search"); //TODO
+				new HeadingSelect(this.app, value.inputEl);
+				value.setPlaceholder("Example: ## Tasks")
+					.setValue(this.plugin.settings.taskHeading)
+					.onChange(async (selectedHeading) => {
+						this.plugin.settings.taskHeading = selectedHeading;
+						await this.plugin.saveSettings();
+					});
 			});
 		}
 	}
@@ -389,45 +375,44 @@ class SettingTab extends PluginSettingTab {
 
 				.addExtraButton((cb) => {
 					cb.setIcon("up-chevron-glyph")
-							.setTooltip("Move up")
-							.onClick(async () => {
-								if (index - 1 < 0) return;
+						.setTooltip("Move up")
+						.onClick(async () => {
+							if (index - 1 < 0) return;
 
-								var temp = this.plugin.settings.copyContentHeadings[index];
-								this.plugin.settings.copyContentHeadings[index] = this.plugin.settings.copyContentHeadings[index-1];
-								this.plugin.settings.copyContentHeadings[index-1] = temp;
-							
-								await this.plugin.saveSettings();
-								this.display();
-							});
+							var temp = this.plugin.settings.copyContentHeadings[index];
+							this.plugin.settings.copyContentHeadings[index] = this.plugin.settings.copyContentHeadings[index-1];
+							this.plugin.settings.copyContentHeadings[index-1] = temp;
+						
+							await this.plugin.saveSettings();
+							this.display();
+						});
 				})
 				.addExtraButton((cb) => {
-						cb.setIcon("down-chevron-glyph")
-								.setTooltip("Move down")
-								.onClick(async () => {
-									if (index + 1 == this.plugin.settings.copyContentHeadings.length) return;
+					cb.setIcon("down-chevron-glyph")
+						.setTooltip("Move down")
+						.onClick(async () => {
+							if (index + 1 == this.plugin.settings.copyContentHeadings.length) return;
 
-									var temp = this.plugin.settings.copyContentHeadings[index];
-									this.plugin.settings.copyContentHeadings[index] = this.plugin.settings.copyContentHeadings[index+1];
-									this.plugin.settings.copyContentHeadings[index+1] = temp;
-								
-									await this.plugin.saveSettings();
-									this.display();
-								});
+							var temp = this.plugin.settings.copyContentHeadings[index];
+							this.plugin.settings.copyContentHeadings[index] = this.plugin.settings.copyContentHeadings[index+1];
+							this.plugin.settings.copyContentHeadings[index+1] = temp;
+						
+							await this.plugin.saveSettings();
+							this.display();
+						});
 				})
 				.addExtraButton((cb) => {
-						cb.setIcon("cross")
-								.setTooltip("Delete")
-								.onClick(async () => {
-										this.plugin.settings.copyContentHeadings.splice(
-												index,
-												1
-										);
+					cb.setIcon("cross")
+						.setTooltip("Delete")
+						.onClick(async () => {
+							this.plugin.settings.copyContentHeadings.splice(
+								index,
+								1
+							);
 
-										await this.plugin.saveSettings();
-										// Force refresh
-										this.display();
-								});
+							await this.plugin.saveSettings();
+							this.display();
+						});
 				})
 				
 				.infoEl.remove();
@@ -435,13 +420,12 @@ class SettingTab extends PluginSettingTab {
 
 		new Setting(this.containerEl).addButton((cb) => {
 			cb.setButtonText("Create new pair")
-					.setCta()
-					.onClick(async () => {
-							this.plugin.settings.copyContentHeadings.push(["",""]);
-							await this.plugin.saveSettings();
-							// Force refresh
-							this.display();
-					});
-			});
+				.setCta()
+				.onClick(async () => {
+					this.plugin.settings.copyContentHeadings.push(["",""]);
+					await this.plugin.saveSettings();
+					this.display();
+				});
+		});
 	}
 }
