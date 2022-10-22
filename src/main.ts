@@ -4,7 +4,6 @@ import { FolderSelect, HeadingSelect } from './Settings/Selecters';
 import { isDailyNote, addContentToHeading, getHashLevel } from './utils';
 
 interface Settings {
-	mySetting: string;
 	dotw: boolean,
 	dotwLst: Array<string>,
 	archive: boolean,
@@ -19,7 +18,6 @@ interface Settings {
 }
 
 const DEFAULT_SETTINGS: Settings = {
-	mySetting: 'default',
 	dotw: false,
 	dotwLst: ['', '', '', '', '', '', ''],
 	archive: false,
@@ -149,11 +147,6 @@ export default class NoteManager extends Plugin {
 		this.settings.modified.curr = file.basename;
 		await this.saveSettings();
 
-		// run 'Day of the Week'
-		if (this.settings.dotw) {
-			this.runDayOfTheWeek(file);
-		}
-
 		// get all notes
 		const allNotes = getAllDailyNotes();
 		const allKeys = Object.keys(allNotes);
@@ -186,6 +179,11 @@ export default class NoteManager extends Plugin {
 		// copy over content if enabled
 		if (this.settings.copyContentHeadings.length > 0 && lastNote) {
 			await this.runContentCopy(lastNote, file, this.settings.copyContentHeadings);
+		}
+
+		// run 'Day of the Week'
+		if (this.settings.dotw) {
+			this.runDayOfTheWeek(file);
 		}
 	}
 
@@ -251,6 +249,10 @@ export default class NoteManager extends Plugin {
 		headings.forEach(async (pair) => {
 			const srcHeading = pair[0];
 			const destHeading = pair[1];
+
+			if (!srcHeading || !destHeading) {
+				return;
+			}
 
 			// find how many hashtags deep the heading is
 			const hashLevel = getHashLevel(srcHeading);
