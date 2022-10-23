@@ -4,8 +4,8 @@ import { FolderSelect, HeadingSelect } from './Settings/Selecters';
 import { isDailyNote, addContentToHeading, getHashLevel } from './utils';
 
 interface Settings {
-	dotw: boolean,
-	dotwLst: Array<string>,
+	prevNote: boolean,
+	prevNoteText: string,
 	archive: boolean,
 	archiveMaxNotes: number,
 	archiveFolder: string,
@@ -14,12 +14,14 @@ interface Settings {
 	copyContentHeadings: Array<[string, string]>,
 	modified: {
 		[key: string]: string
-	}
+	},
+	dotw: boolean,
+	dotwLst: Array<string>,
 }
 
 const DEFAULT_SETTINGS: Settings = {
-	dotw: false,
-	dotwLst: ['', '', '', '', '', '', ''],
+	prevNote: true,
+	prevNoteText: "<< Previous",
 	archive: false,
 	archiveMaxNotes: 7,
 	archiveFolder: '',
@@ -29,7 +31,9 @@ const DEFAULT_SETTINGS: Settings = {
 	modified: {
 		curr: '',
 		prev: ''
-	}
+	},
+	dotw: false,
+	dotwLst: ['', '', '', '', '', '', '']
 }
 
 const DEFAULT_DOTW: Array<[string, string]> = [
@@ -164,6 +168,11 @@ export default class NoteManager extends Plugin {
 		// get previous daily note
 		const lastNote = allNotes[sortedKeys[1]];
 
+		// set link to previous note if enabled
+		if (this.settings.prevNote) {
+			await this.runPreviousNoteLink(lastNote, file);
+		}
+
 		// archive old notes if enabled
 		if (this.settings.archive) {
 			await this.runArchive(allNotes, sortedKeys);
@@ -187,15 +196,12 @@ export default class NoteManager extends Plugin {
 		}
 	}
 
-	async runDayOfTheWeek (todaysNote: TFile): Promise<void> {
+	async runPreviousNoteLink (prevNote: TFile, todaysNote: TFile): Promise<void> {
 		// Title the note with the day of the week
-		const day = new Date(todaysNote.basename.replace('-', '/')).getDay();
-		if (day < 0 || day > 6) return;
-
-		const titleStr = "# " + (this.settings.dotwLst[day] ?? DEFAULT_DOTW[day][0]) + "\n";
-
 		let body = await this.app.vault.read(todaysNote);
-		body = titleStr + body;
+		const link = "[[" + prevNote.basename + "|" + this.settings.prevNoteText + "]]"
+
+		body = body.replace("<dnm>previous<dnm>", link);
 
 		await this.app.vault.modify(todaysNote, body);
 	}
@@ -275,6 +281,19 @@ export default class NoteManager extends Plugin {
 			await this.app.vault.modify(currNote, todaysNote);
 		});
 	}
+
+	async runDayOfTheWeek (todaysNote: TFile): Promise<void> {
+		// Title the note with the day of the week
+		const day = new Date(todaysNote.basename.replace('-', '/')).getDay();
+		if (day < 0 || day > 6) return;
+
+		const titleStr = "# " + (this.settings.dotwLst[day] ?? DEFAULT_DOTW[day][0]) + "\n";
+
+		let body = await this.app.vault.read(todaysNote);
+		body = titleStr + body;
+
+		await this.app.vault.modify(todaysNote, body);
+	}
 }
 
 class SettingTab extends PluginSettingTab {
@@ -291,6 +310,9 @@ class SettingTab extends PluginSettingTab {
 		containerEl.empty();
 		containerEl.createEl('h2', {text: 'And how would you like that done?'});
 		
+		/* Previous Note Link */
+		await this.previousNoteSettings(containerEl);
+
 		/* Archive */
 		await this.archiveSettings(containerEl);
 
@@ -305,35 +327,33 @@ class SettingTab extends PluginSettingTab {
 		await this.daySettings(containerEl);
 	}
 
-	// Creates settings UI for day of the week title
-	async daySettings (containerEl: HTMLElement): Promise<void> {
+	// Creates settings UI for archiving notes
+	async previousNoteSettings (containerEl: HTMLElement): Promise<void> {
 		new Setting(containerEl)
-			.setName('Day of the Week')
-			.setDesc("Choose custom title for each day of the week?")
+			.setName('Link to Previous Note')
+			.setDesc("Include a link to the previous Daily Note.\nUse <dnm>previous<dnm> in your Daily Note template as a placeholder for the link.")
 			.addToggle((toggle) => {
 				toggle
-					.setValue(this.plugin.settings.dotw)
-					.onChange(async (dotw) => {
-						this.plugin.settings.dotw = dotw;
+					.setValue(this.plugin.settings.prevNote)
+					.onChange(async (prevNote) => {
+						this.plugin.settings.prevNote = prevNote;
 
 						await this.plugin.saveSettings();
 						this.display();
 					});
 		});
 
-		if (this.plugin.settings.dotw) {
-			for (let i = 0; i < 7; i++) {
-				new Setting(containerEl)
-				.setDesc(DEFAULT_DOTW[i][0])
-				.addText((text) => {
-					text.setPlaceholder(DEFAULT_DOTW[i][1])
-						.setValue(this.plugin.settings.dotwLst[i])
-						.onChange(async (input) => {
-							this.plugin.settings.dotwLst[i] = input;
-							await this.plugin.saveSettings();
-						});
-				});
-			}
+		if (this.plugin.settings.prevNote) {
+			new Setting(containerEl)
+			.setDesc("Custom text for link:")
+			.addText((text) => {
+				text.setPlaceholder("Example: << Previous")
+					.setValue(this.plugin.settings.prevNoteText)
+					.onChange(async (prevNoteText) => {
+						this.plugin.settings.prevNoteText = prevNoteText;
+						await this.plugin.saveSettings();
+					});
+			});
 		}
 	}
 
@@ -495,5 +515,37 @@ class SettingTab extends PluginSettingTab {
 					this.display();
 				});
 		});
+	}
+
+	// Creates settings UI for day of the week title
+	async daySettings (containerEl: HTMLElement): Promise<void> {
+		new Setting(containerEl)
+			.setName('Day of the Week')
+			.setDesc("Choose custom title for each day of the week?")
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings.dotw)
+					.onChange(async (dotw) => {
+						this.plugin.settings.dotw = dotw;
+
+						await this.plugin.saveSettings();
+						this.display();
+					});
+		});
+
+		if (this.plugin.settings.dotw) {
+			for (let i = 0; i < 7; i++) {
+				new Setting(containerEl)
+				.setDesc(DEFAULT_DOTW[i][0])
+				.addText((text) => {
+					text.setPlaceholder(DEFAULT_DOTW[i][1])
+						.setValue(this.plugin.settings.dotwLst[i])
+						.onChange(async (input) => {
+							this.plugin.settings.dotwLst[i] = input;
+							await this.plugin.saveSettings();
+						});
+				});
+			}
+		}
 	}
 }
