@@ -220,7 +220,8 @@ export default class NoteManager extends Plugin {
 	async runTasks (prevNote: TFile, currNote: TFile): Promise<void> {
 		// rollover tasks from previous note
     const contents = await this.app.vault.read(prevNote);
-    const incompleteTasks = Array.from(contents.replace(/\t*- \[ \][ ]*\n/g, '').matchAll(/\t*- \[ \].*/g)).map(([task]) => task);
+		// remove empty and comlete tasks, match unchecked boxes and any bulleted children
+    const incompleteTasks = Array.from(contents.replace(/\t*- \[ \][ ]*\n/g, '').replace(/\t*- \[x\] .*\n/g, '').matchAll(/\t*- \[ \].*(\n\t*- .*)*/g)).map(([task]) => task);
 
 		if (incompleteTasks.length == 0) {
 			return;
