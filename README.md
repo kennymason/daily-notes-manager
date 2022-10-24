@@ -58,7 +58,7 @@ In the text field for your custom heading (in plugin settings), use the embeddab
 - Example: "It's Friday, `<#dnm>date:MM-DD</#dnm>`"
 - Read more in the [[### Dynamic Embeddable-Text Syntax]] section.
 
-##### custom-dotw Syntax
+#### custom-dotw Syntax
 By default, this title is added to the beginning of the file as a top-level heading, followed by a newline character. However, you have the option to select where you want this text to appear, with any number of headings using the embeddable syntax `<#dnm>custom-dotw</#dnm>`. If this appears anywhere in your Daily Note template, the Day of the Week feature will replace this embeddable with your custom text rather than creating a new title at the top of the file.
 
 **Note:** Using the custom-dotw syntax will replace the embeddable text with the custom text, without adding hashtags or newlines.
