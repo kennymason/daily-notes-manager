@@ -10,6 +10,7 @@
     "moduleResolution": "node",
     "importHelpers": true,
     "isolatedModules": true,
+    "esModuleInterop": true, // required for using "import moment from 'moment';" to import Moment.js in TypeScript
 	"strictNullChecks": true,
     "lib": [
       "DOM",

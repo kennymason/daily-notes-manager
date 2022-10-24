@@ -1,3 +1,4 @@
+import moment from 'moment';
 import { TFile, TFolder } from "obsidian";
 import { getDailyNote, getDailyNoteSettings, getAllDailyNotes } from "obsidian-daily-notes-interface";
 
@@ -26,8 +27,57 @@ export function getHashLevel (headingStr: string): number {
   return hashLevel
 }
 
+export function parseEmbeddables (str: string, date: string): string {
+  str = parseDotwEmbeddable(str, date);
+  str = parseDateEmbeddable(str, date);
+  return str;
+}
+
+export function parseDateEmbeddable (str: string, date: string): string {
+  // Replace unmodified dates
+  str = str.replace("<#dnm>date<\/#dnm>", date);
+
+  // replace dates with modifiers
+  let re = new RegExp("<#dnm>date[:]?(.*?)<\/#dnm>", 'g');
+  var match;
+  while (match = re.exec(str)) {
+    // get format modifier
+    if (match[1]) {
+      str = str.replace(match[0], moment(date).format(match[1]));
+    }
+  }
+
+  return str;
+}
+
+export function parseDotwEmbeddable (str: string, date: string): string {
+  const day = getDayOfTheWeek(date);
+  if (day == -1) {
+    return str;
+  }
+
+  const days = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday"
+  ];
+  
+  return str.replace(new RegExp("<#dnm>dotw</#dnm>", 'g'), days[day]);
+}
+
+export function getDayOfTheWeek (date: string): number {
+  const day = new Date(date.replace('-', '/')).getDay();
+  if (day < 0 || day > 6) return -1;
+
+  return day;
+}
+
 // adds given content to a specified heading in a given file. returns empty string if heading could not be found
-export function addContentToHeading(note: string, heading: string, content: string): string {
+export function addContentToHeading (note: string, heading: string, content: string): string {
   // number of blank new lines after heading (not including the \n on the heading line)
   const newlinesMatch = ((note || '').match(new RegExp("(?<=" + heading + ")\n*")) || ['']);
   let numNewLines = newlinesMatch[0].length - 1;

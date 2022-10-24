@@ -1,10 +1,9 @@
 import { App, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile } from 'obsidian';
 import { createDailyNote, getAllDailyNotes, getDailyNote } from 'obsidian-daily-notes-interface';
 import { FolderSelect, HeadingSelect } from './Settings/Selecters';
-import { isDailyNote, addContentToHeading, getHashLevel } from './utils';
+import { isDailyNote, addContentToHeading, getHashLevel, getDayOfTheWeek, parseEmbeddables } from './utils';
 
 interface Settings {
-	prevNote: boolean,
 	prevNoteText: string,
 	archive: boolean,
 	archiveMaxNotes: number,
@@ -20,8 +19,7 @@ interface Settings {
 }
 
 const DEFAULT_SETTINGS: Settings = {
-	prevNote: true,
-	prevNoteText: "<< Previous",
+	prevNoteText: "",
 	archive: false,
 	archiveMaxNotes: 7,
 	archiveFolder: '',
@@ -36,6 +34,7 @@ const DEFAULT_SETTINGS: Settings = {
 	dotwLst: ['', '', '', '', '', '', '']
 }
 
+// Just placeholders, not actual defaults
 const DEFAULT_DOTW: Array<[string, string]> = [
 	["Sunday", "Sunday-Funday"],
 	["Monday", "Monday ¯\\_(ツ)_/¯"],
@@ -72,13 +71,13 @@ export default class NoteManager extends Plugin {
       id: "run-daily-notes-manager",
       name: "Run Daily Notes Manager",
       callback: async () => {
-				await this.onRunDNM(this);
+				await this.onRunDNM();
 			}
     })
 
 		// creates the icon in the left ribbon
 		const ribbonIconEl = this.addRibbonIcon('dice', 'Daily Notes Manager', async (evt: MouseEvent) => {
-			await this.onRunDNM(this);
+			await this.onRunDNM();
 		});
 
 		// add a settings tab
@@ -115,7 +114,7 @@ export default class NoteManager extends Plugin {
 		}
 	}
 
-	async onRunDNM (plugin: NoteManager): Promise<void> {
+	async onRunDNM (): Promise<void> {
 		// Called when the user runs the 'Run Daily Notes Manager' command or clicks the ribbon icon.
 		await this.loadSettings();
 
@@ -168,11 +167,6 @@ export default class NoteManager extends Plugin {
 		// get previous daily note
 		const lastNote = allNotes[sortedKeys[1]];
 
-		// set link to previous note if enabled
-		if (this.settings.prevNote) {
-			await this.runPreviousNoteLink(lastNote, file);
-		}
-
 		// archive old notes if enabled
 		if (this.settings.archive) {
 			await this.runArchive(allNotes, sortedKeys);
@@ -192,16 +186,57 @@ export default class NoteManager extends Plugin {
 
 		// run 'Day of the Week'
 		if (this.settings.dotw) {
-			this.runDayOfTheWeek(file);
+			await this.runDayOfTheWeek(file);
 		}
+
+		/* Dynamic Embeddable-Text */
+		// runs after "content copy" because otherwise content won't carry over if user puts embeddable text in a heading
+
+		// set link to previous note
+		await this.runPreviousEmbeddable(lastNote, file);
+
+		// replace "Current Date" embeddables, replace "Day of the Week" embeddables
+		await this.runEmbeddables(file);
 	}
 
-	async runPreviousNoteLink (prevNote: TFile, todaysNote: TFile): Promise<void> {
-		// Title the note with the day of the week
-		let body = await this.app.vault.read(todaysNote);
-		const link = "[[" + prevNote.basename + "|" + this.settings.prevNoteText + "]]"
+	async runEmbeddables (note: TFile): Promise<void> {
+		// Handle 'Current Date' and 'Day of the Week' embeddables
+		let body = await this.app.vault.read(note);
 
-		body = body.replace("<dnm>previous<dnm>", link);
+		body = parseEmbeddables(body, note.basename);
+
+		await this.app.vault.modify(note, body);
+	}
+
+	async runDayOfTheWeek (todaysNote: TFile): Promise<void> {
+		// Title the note with the day of the week
+		const day = getDayOfTheWeek(todaysNote.basename);
+		if (day == -1) {
+			return;
+		}
+
+		const titleStr = parseEmbeddables(this.settings.dotwLst[day] ?? DEFAULT_DOTW[day][0], todaysNote.basename);
+
+		let body = await this.app.vault.read(todaysNote);
+		if (body.includes("<#dnm>custom-dotw</#dnm>")) {
+			body = body.replace(new RegExp("<#dnm>custom-dotw</#dnm>", 'g'), titleStr);
+		}
+		else {
+			body = "# " + titleStr + "\n" + body;
+		}
+
+		await this.app.vault.modify(todaysNote, body);
+	}
+
+	async runPreviousEmbeddable (prevNote: TFile, todaysNote: TFile): Promise<void> {
+		// Insert link to previous Daily Note
+		let body = await this.app.vault.read(todaysNote);
+
+		// parse embeddable date if used
+		let customText = parseEmbeddables(this.settings.prevNoteText == '' ? "<#dnm>date</#dnm>" : this.settings.prevNoteText, prevNote.basename);
+		const link = "[[" + prevNote.basename + "|" + customText + "]]";
+
+		body = body.replace(new RegExp("<#dnm>previous</#dnm>", 'g'), link);
 
 		await this.app.vault.modify(todaysNote, body);
 	}
@@ -281,19 +316,6 @@ export default class NoteManager extends Plugin {
 			await this.app.vault.modify(currNote, todaysNote);
 		});
 	}
-
-	async runDayOfTheWeek (todaysNote: TFile): Promise<void> {
-		// Title the note with the day of the week
-		const day = new Date(todaysNote.basename.replace('-', '/')).getDay();
-		if (day < 0 || day > 6) return;
-
-		const titleStr = "# " + (this.settings.dotwLst[day] ?? DEFAULT_DOTW[day][0]) + "\n";
-
-		let body = await this.app.vault.read(todaysNote);
-		body = titleStr + body;
-
-		await this.app.vault.modify(todaysNote, body);
-	}
 }
 
 class SettingTab extends PluginSettingTab {
@@ -330,22 +352,8 @@ class SettingTab extends PluginSettingTab {
 	// Creates settings UI for archiving notes
 	async previousNoteSettings (containerEl: HTMLElement): Promise<void> {
 		new Setting(containerEl)
-			.setName('Link to Previous Note')
-			.setDesc("Include a link to the previous Daily Note.\nUse <dnm>previous<dnm> in your Daily Note template as a placeholder for the link.")
-			.addToggle((toggle) => {
-				toggle
-					.setValue(this.plugin.settings.prevNote)
-					.onChange(async (prevNote) => {
-						this.plugin.settings.prevNote = prevNote;
-
-						await this.plugin.saveSettings();
-						this.display();
-					});
-		});
-
-		if (this.plugin.settings.prevNote) {
-			new Setting(containerEl)
-			.setDesc("Custom text for link:")
+			.setName('Custom Text for Link to Previous Note')
+			.setDesc("Include a link to the previous Daily Note using the <#dnm>previous</#dnm> notation in your Daily Note template.")
 			.addText((text) => {
 				text.setPlaceholder("Example: << Previous")
 					.setValue(this.plugin.settings.prevNoteText)
@@ -354,7 +362,6 @@ class SettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 			});
-		}
 	}
 
 	// Creates settings UI for archiving notes
@@ -371,7 +378,7 @@ class SettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 						this.display();
 					});
-		});
+			});
 
 		if (this.plugin.settings.archive) {
 			new Setting(containerEl)

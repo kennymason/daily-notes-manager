@@ -4,10 +4,6 @@ import { TextInputSuggest } from "./suggest";
 import { fuzzySearch } from "../utils";
 
 export class FolderSelect extends TextInputSuggest<TFolder> {
-  // FolderSelect (input: string) {
-  //   this.findFolders(input);
-  // }
-
   findFolders (input: string): TFolder[] {
     const allFiles: TAbstractFile[] = app.vault.getAllLoadedFiles();
     const folders: TFolder[] = [];
