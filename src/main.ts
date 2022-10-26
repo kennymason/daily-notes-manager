@@ -93,7 +93,12 @@ export default class NoteManager extends Plugin {
 			return;
 		}
 
-		await plugin.runNoteManager(file);
+		// Only proceed if file is less than 10 seconds old
+		if (new Date().getTime() - file.stat.ctime > 10000) {
+			return;
+		}
+
+		await plugin.onRunDNM(file);
 	}
 
 	async onFileDelete (plugin: NoteManager, file: TAbstractFile): Promise<void> {
@@ -114,32 +119,34 @@ export default class NoteManager extends Plugin {
 		}
 	}
 
-	async onRunDNM (): Promise<void> {
+	async onRunDNM (file: TFile | undefined = undefined): Promise<void> {
 		// Called when the user runs the 'Run Daily Notes Manager' command or clicks the ribbon icon.
 		await this.loadSettings();
 
-		let todaysNote = getDailyNote(window.moment(), getAllDailyNotes());
-
-		if (!isDailyNote(todaysNote, true)) {
-			todaysNote = await createDailyNote(window.moment());
-			await this.runNoteManager(todaysNote);
-		}
-		// TODO: use the daily note settings format in other places
-		else {
-			if (todaysNote.basename != this.settings.modified.curr && todaysNote.basename != this.settings.modified.prev) {
-				await this.runNoteManager(todaysNote);
+		let todayOnly = false;
+		if (file == undefined) {
+			file = getDailyNote(window.moment(), getAllDailyNotes());
+			if (!file) {
+				file = await createDailyNote(window.moment());
 			}
+
+			todayOnly = true;
+		}
+
+		if (!file || !(file instanceof TFile) || !isDailyNote(file, todayOnly)) {
+			return;
+		}
+
+		if (file.basename != this.settings.modified.curr && file.basename != this.settings.modified.prev) {
+			await this.runNoteManager(file);
 		}
 
 		const leaf = this.app.workspace.getLeaf();
-		leaf.openFile(todaysNote);
+		await leaf.openFile(file);
 	}
 
-	async runNoteManager (file: TFile | null): Promise<void> {
-		if (!file || !(file instanceof TFile) || !isDailyNote(file)) {
-			return;
-		}
-			
+	// Only run this function from 'onRunDNM()' - it does vital checks
+	async runNoteManager (file: TFile): Promise<void> {
 		// return if this note was already modified
 		if (this.settings.modified.prev == file.basename || this.settings.modified.curr == file.basename){
 			return;
